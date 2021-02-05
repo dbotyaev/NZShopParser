@@ -30,7 +30,7 @@ class GSheetsBot:
 
     # метода сохрания результат парсинга в Google-таблицу
     def save_result_parsing(self, name_shop: str, result: list):
-        title = ['№ Листинга', 'Ссылка на листинг',	'Товар', 'Описание', 'Цена', 'Признак цены']
+        title = ['№ Листинга', 'Кол-во', 'Ссылка на листинг',	'Товар', 'Описание', 'Цена', 'Признак цены']
         result.insert(0, title)  # Добавляем заголовок таблицы
         try:
             try:  # если лист найден
@@ -40,16 +40,18 @@ class GSheetsBot:
                 lastrow = len(sheet_shop.get_all_values(include_tailing_empty_rows=False))
                 # добавляем значения в Google-таблицу
                 sheet_shop.update_values('A' + str(lastrow + 1), result)  # дополняем таблицу новыми значениями
-                sheet_shop.adjust_column_width(start=1, end=6, pixel_size=170)  # установка ширины столбцов
-                sheet_shop.adjust_column_width(start=4, end=4, pixel_size=500)
+                sheet_shop.adjust_column_width(start=1, end=7, pixel_size=170)  # установка ширины столбцов
+                sheet_shop.adjust_column_width(start=5, end=5, pixel_size=500)
+                sheet_shop.adjust_column_width(start=2, end=2, pixel_size=80)
                 # установка высоты строк
                 sheet_shop.adjust_row_height(start=lastrow + 2, end=lastrow + 2 + len(result), pixel_size=90)
             except pygsheets.exceptions.WorksheetNotFound:  # если лист не найден, создается новый
                 sheet_shop = self.google_sheet.add_worksheet(name_shop)
                 # записываем значения в Google-таблицу
                 sheet_shop.update_values('A1', result)
-                sheet_shop.adjust_column_width(start=1, end=6, pixel_size=170)  # установка ширины столбцов
-                sheet_shop.adjust_column_width(start=4, end=4, pixel_size=500)
+                sheet_shop.adjust_column_width(start=1, end=7, pixel_size=170)  # установка ширины столбцов
+                sheet_shop.adjust_column_width(start=5, end=5, pixel_size=500)
+                sheet_shop.adjust_column_width(start=2, end=2, pixel_size=80)
                 sheet_shop.adjust_row_height(start=2, end=len(result), pixel_size=90)  # установка высоты строк
         except Exception as ex:
             logger.error(f'Возникла ошибка при записи в Google-таблицу {ex}')

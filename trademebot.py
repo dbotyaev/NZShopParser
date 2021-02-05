@@ -7,6 +7,7 @@ import time
 import requests
 
 from bs4 import BeautifulSoup
+from collections import Counter
 from loguru import logger
 
 from settings.settings import HEADERS, KEYCOOKIES
@@ -200,7 +201,7 @@ class TrademeParserBot:
             logger.info(f'Ни один из вариантов парсинга price не найден')
             return 0
 
-        # функция получения признака цене
+        # функция получения признака цены
         def _get_price_tag(s):
             # вариант пока единственный
             try:
@@ -215,10 +216,12 @@ class TrademeParserBot:
         logger.info(f'Начинаем парсинг товаров магазина "{name_shop}"')
         # обнуляем список списков с результатом парсинга страниц товаров магазина для загрузки в Google-таблицы
         self.result_parsing_products = []
-        products = self.data_for_parsing[name_shop]['products']  # получаем список ссылок на продукты магазина
-        for url_product in products:
+        # получаем список ссылок на продукты магазина
+        products = self.data_for_parsing[name_shop]['products'].copy() # получаем список ссылок на продукты магазина
+
+        for url_product, count_product in products.items():
             logger.info(f'Пауза перед началом парсинга')
-            time.sleep(random.randrange(10, 20))
+            time.sleep(random.randrange(4, 11))
             logger.info(f' Открываем ссылку товара {URL_SHOP + url_product}')
             response = self._check_open_url(URL_SHOP + url_product)  # проверка авторизации на странице
             if not response:
@@ -234,25 +237,27 @@ class TrademeParserBot:
 
             soup = BeautifulSoup(response.text, 'lxml')
             product_id = re.search('[0-9]+', url_product).group(0)
+            product_count = int(count_product)
             product_url = response.url
-            product_title = soup.find('h1').text
+            product_title = soup.find('h1').text.strip()
             product_description = _get_description(soup)
             product_price = _get_price(soup, response.text)
             product_price_tag = _get_price_tag(soup)
-            logger.debug(f'{product_id}, {product_title}, '
+            logger.debug(f'{product_id}, {product_count}, {product_title}, '
                          f'{"description" if product_description else False},'
                          f' {product_price}, {product_price_tag}')
             # добавляем результат парсинга в список для загрузки в Google-таблицу
-            self.result_parsing_products.append([product_id, product_url, product_title, product_description,
+            self.result_parsing_products.append([product_id, product_count, product_url,
+                                                 product_title, product_description,
                                                  product_price, product_price_tag])
 
             # в случае успеха парсинга удаляю из словаря ссылку на товар и перезаписываю файл
             # data_for_parsing.json, т.е. после завершения парсинга товаров в файле не будет ссылок на товары,
             # в противном случае останутся неспарсенные товары и можно запустить процедуру парсинга из файла
-            self.data_for_parsing[name_shop]['products'].pop(0)
+            self.data_for_parsing[name_shop]['products'].pop(url_product, False)
 
             # секция для тестирования
-            # if self.count_requests == 3:
+            # if self.count_requests > 3:
             #     logger.success(f'Парсинг товаров магазина {name_shop} успешно завершен')
             #     logger.debug(f'Счетчик запросов к сайту {self.count_requests}')
             #     self.save_data_for_parsing_file()
@@ -278,13 +283,16 @@ class TrademeParserBot:
             """
             tag_products = s.find_all('a', href=re.compile('\/Browse\/Listing\.aspx\?id=\d+'))
             for tag in tag_products:
-                products.add(tag.get('href'))
+                products.append(tag.get('href'))
 
         logger.info(f'Пауза перед началом парсинга')
-        time.sleep(random.randrange(30, 90))
+        time.sleep(random.randrange(30, 60))
+
+        # для тестирования
+        # self.count_requests = 0
 
         urls_listing = set()  # множество уникальных ссылок страниц магазина с товарами
-        products = set()  # множество уникальных ссылок на товары одного магазина
+        products = []  # список ссылок на товары одного магазина
         name_shop = shop[0].strip('\r')  # Наименование магазина
         url_shop = shop[1]  # ссылка на листинг магазина
 
@@ -302,7 +310,7 @@ class TrademeParserBot:
             raise
 
         soup = BeautifulSoup(response.text, 'lxml')
-        urls_listing.add(response.url.replace(URL_SHOP, ''))  # текущий адрес страницы добавили в список
+        urls_listing.add(response.url.replace(URL_SHOP, '') + '?page=1')  # текущий адрес страницы добавили в список
 
         logger.info(f'Получаем все ссылки на страницы листинга')
         tag_listing = set(soup.find_all('a', href=re.compile('\/stores\/.+\/feedback\?page=\d+')))
@@ -311,9 +319,15 @@ class TrademeParserBot:
 
         self.data_for_parsing[name_shop] = {}
         self.data_for_parsing[name_shop]['url-listing'] = list(urls_listing)
+        # сортируем список по номеру страницы
+        self.data_for_parsing[name_shop]['url-listing'].\
+            sort(key=lambda url: int(re.search('\d+', re.search('\?page=\d+', url).group(0)).group(0)))
+        self.data_for_parsing[name_shop]['products'] = dict(Counter(products))
 
         logger.info(f'Переходим по страницам листинга и получаем ссылки на товары')
-        for listing in urls_listing:
+        # создаем копию списка для перебора, чтобы можно было перебирать и применять метод pop() в конце цикла
+        urls = self.data_for_parsing[name_shop]['url-listing'].copy()
+        for listing in urls:
             logger.info(f'Переходим на страницу {listing}')
             response = self._check_open_url(URL_SHOP + listing)  # проверка авторизации на странице
 
@@ -331,20 +345,28 @@ class TrademeParserBot:
             # получаем ссылки на товары на странице листинга и добавляем в кортеж
             _get_urls_products(soup)
             logger.info(f'Ссылки для парсинга товаров получены')
-            self.data_for_parsing[name_shop]['products'] = list(products)
+
+            self.data_for_parsing[name_shop]['products'] = dict(Counter(products))
+
+            # в случае удачного парсинга ссылок на товары, удаляем ссылку из словаря
+            # по окончанию парсинга в словаре не должно остаться страниц с листингами
+            # в противном случае данные ссылок на товары не были получены на оставшихся страницах
+            self.data_for_parsing[name_shop]['url-listing'].pop(0)
 
             time.sleep(random.randrange(4, 11))
 
             # секция для тестирования
-            # if self.count_requests >= 2:
-            #     logger.success(f'Получено {len(products)} ссылки на товары в магазине "{name_shop}"')
+            # if self.count_requests > 3:
+            #     count_products = len(self.data_for_parsing[name_shop]['products'])
+            #     logger.success(f'Получено {count_products} ссылки на товары в магазине "{name_shop}"')
             #     logger.debug(f'Счетчик запросов к сайту {self.count_requests}')
             #     self.save_data_for_parsing_file()  # записываем результат парсинга в файл
             #     self.count_requests = 0
             #     logger.debug(f'Счетчик запросов к сайту {self.count_requests}')
             #     return
 
-        logger.success(f'Получено {len(products)} ссылки на товары в магазине "{name_shop}"')
+        count_products = len(self.data_for_parsing[name_shop]['products'])  # кол-во уникальных товаров
+        logger.success(f'Получено {count_products} ссылки на товары в магазине "{name_shop}"')
         logger.debug(f'Счетчик запросов к сайту {self.count_requests}')
 
         self.save_data_for_parsing_file()  # записываем результат парсинга в файл
@@ -355,19 +377,21 @@ if __name__ == '__main__':
 
     # with open(os.getcwd() + '\\pickles\\session.pickle', 'rb') as file:
     #     session = pickle.load(file)
-
-    # url = 'https://www.trademe.co.nz/Browse/Listing.aspx?id=2930701065'
+    #
+    # url = 'https://www.trademe.co.nz/link.aspx?i=56489&helpPageStorePath=freddy103&helpPagePath=feedback'
     # try:
     #     response = session.get(url, headers=HEADERS)
     #     print('url', response.url)
     #
-    #     with open(os.getcwd() + '\\html\\2930701065.html', 'w') as file:
+    #     with open(os.getcwd() + '\\shops\\listing.html', 'w') as file:
     #         file.write(response.text)
     # except Exception as ex:
     #     logger.error(f'{ex}')
-    #
+
     # print(response.text)
 
-    # with open(os.getcwd() + '\\html\\2934511811.html', 'r') as file:
+    # with open(os.getcwd() + '\\shops\\listing.html', 'r') as file:
     #     response = file.read()
     # soup = BeautifulSoup(response, 'lxml')
+
+    # soup = BeautifulSoup(response.text, 'lxml')
