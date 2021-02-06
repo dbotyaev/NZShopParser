@@ -38,8 +38,8 @@ class GSheetsBot:
                 logger.info(f'Лист магазина в Google таблице уже существует. Поэтому данные будут объединены')
                 # получаем индекс последней непустой строки
                 lastrow = len(sheet_shop.get_all_values(include_tailing_empty_rows=False))
-                # добавляем значения в Google-таблицу
-                sheet_shop.update_values('A' + str(lastrow + 1), result)  # дополняем таблицу новыми значениями
+                # дополняем Google-таблицу новыми значениями
+                sheet_shop.update_values(crange='A' + str(lastrow + 1), values=result, extend=True)
                 sheet_shop.adjust_column_width(start=1, end=7, pixel_size=170)  # установка ширины столбцов
                 sheet_shop.adjust_column_width(start=5, end=5, pixel_size=500)
                 sheet_shop.adjust_column_width(start=2, end=2, pixel_size=80)
@@ -64,4 +64,3 @@ class GSheetsBot:
 
 if __name__ == '__main__':
     pass
-    # gsheet = GSheetsBot()
