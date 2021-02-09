@@ -67,7 +67,7 @@ class TrademeParserBot:
         logger.info(f'Открываем страницу после авторизации {URL_CHECK_AUTH}')
         try:
             self.count_requests += 1
-            response = self.session.get(URL_CHECK_AUTH, headers=HEADERS)
+            response = self.session.get(URL_CHECK_AUTH, headers=HEADERS, timeout=30)
         except Exception as ex:
             logger.info(f'Ошибка открытия страницы. {ex}')
             return False
@@ -91,11 +91,28 @@ class TrademeParserBot:
             logger.error(f'Ошибка авторизации с использованием Cookies {ex}')
             return False
 
-    def save_data_for_parsing_file(self):
-        # метод записи в файл json результата парсинга ссылок листинга и ссылок на товары
-        with open(os.getcwd() + '\\shops\\data_for_parsing.json', 'w', encoding='utf-8') as file_json:
-            json.dump(self.data_for_parsing, file_json, ensure_ascii=False, indent=4)
-            logger.success(f'Данные успешно записаны в файл data_for_parsing.json')
+    # метод записи в файл json результата парсинга ссылок листинга и ссылок на товары
+    def save_data_for_parsing_file(self, name_shop):
+        def get_valid_filename(s):
+            """
+            Return the given string converted to a string that can be used for a clean
+            filename. Remove leading and trailing spaces; convert other spaces to
+            underscores; and remove anything that is not an alphanumeric, dash,
+            underscore, or dot.
+            get_valid_filename("john's portrait in 2004.jpg")
+            'johns_portrait_in_2004.jpg'
+            """
+            s = str(s).strip().replace(' ', '_')
+            return re.sub(r'(?u)[^-\w.]', '', s)
+
+        path = os.getcwd() + '\\shops\\'
+        name_file = get_valid_filename(name_shop) + '.json'
+        try:
+            with open(path + name_file, 'w', encoding='utf-8') as file_json:
+                json.dump(self.data_for_parsing, file_json, ensure_ascii=False, indent=4)
+                logger.success(f'Данные успешно записаны в файл {name_file}')
+        except Exception as ex:
+            logger.error(f'Не удалось сохранить файл {name_file} диск')
 
     def _check_open_url(self, url):
         """
@@ -108,7 +125,7 @@ class TrademeParserBot:
         """
         try:
             self.count_requests += 1
-            response = self.session.get(url, headers=HEADERS)  # переходим на страницу и получаем ответ
+            response = self.session.get(url, headers=HEADERS, timeout=30)  # переходим на страницу и получаем ответ
         except Exception as ex:
             logger.error(f'Ошибка открытия страницы')
             logger.error(f'Код ошибки {ex}')
@@ -176,6 +193,7 @@ class TrademeParserBot:
             # вариант 1
             try:
                 price = s.find('div', id='BuyNow_BuyNow').text
+                price = price.replace(',', '')
                 price = float(re.search('\d+.\d+', price).group(0))
                 return price
             except AttributeError:
@@ -184,12 +202,13 @@ class TrademeParserBot:
             # вариант 2
             try:
                 price = s.find('p', class_='tm-buy-now-box__price p-h1').text
+                price = price.replace(',', '')
                 price = float(re.search('\d+.\d+', price).group(0))
                 return price
             except AttributeError:
                 pass
 
-            # вариант последний
+            # вариант, который получает цену из dict в html, даже если цена скрыта
             try:
                 price = re.search('\"buyNowPrice\": \d+.\d+', text)
                 price = re.search('\d+.\d+', price.group(0))
@@ -232,7 +251,7 @@ class TrademeParserBot:
             if response == 'STOP':  # авторизация не успешна
                 logger.warning(f'Из ошибки авторизации прекращаем парсинг товаров')
                 logger.warning(f'Сохраняем неспарсенные ссылки на товары в файл data_for_parsing.json')
-                self.save_data_for_parsing_file()
+                self.save_data_for_parsing_file(name_shop)
                 raise
 
             soup = BeautifulSoup(response.text, 'lxml')
@@ -260,14 +279,16 @@ class TrademeParserBot:
             # if self.count_requests > 3:
             #     logger.success(f'Парсинг товаров магазина {name_shop} успешно завершен')
             #     logger.debug(f'Счетчик запросов к сайту {self.count_requests}')
-            #     self.save_data_for_parsing_file()
+            #     self.save_data_for_parsing_file(name_shop)
+            #     self.data_for_parsing = {}
             #     self.count_requests = 0
             #     logger.debug(f'Счетчик запросов к сайту {self.count_requests}')
             #     return
 
         logger.success(f'Парсинг товаров магазина {name_shop} успешно завершен.')
         logger.info(f'Получено товаров {len(self.result_parsing_products)}')
-        self.save_data_for_parsing_file()
+        self.save_data_for_parsing_file(name_shop)
+        self.data_for_parsing = {}  # очищаем словарь для парсинга нового магазина
 
     def parsing_shop(self, shop):
         """
@@ -306,7 +327,7 @@ class TrademeParserBot:
             return
         if response == 'STOP':  # авторизация не успешна, завершаем работу скрипта
             logger.warning(f'Сохраняем имеющиеся результаты в файл')
-            self.save_data_for_parsing_file()
+            self.save_data_for_parsing_file(name_shop)
             raise
 
         soup = BeautifulSoup(response.text, 'lxml')
@@ -338,7 +359,7 @@ class TrademeParserBot:
                 continue
             if response == 'STOP':  # авторизация не успешна, завершаем работу скрипта
                 logger.warning(f'Сохраняем имеющиеся результаты в файл')
-                self.save_data_for_parsing_file()
+                self.save_data_for_parsing_file(name_shop)
                 raise
 
             soup = BeautifulSoup(response.text, 'lxml')
@@ -360,7 +381,7 @@ class TrademeParserBot:
             #     count_products = len(self.data_for_parsing[name_shop]['products'])
             #     logger.success(f'Получено {count_products} ссылки на товары в магазине "{name_shop}"')
             #     logger.debug(f'Счетчик запросов к сайту {self.count_requests}')
-            #     self.save_data_for_parsing_file()  # записываем результат парсинга в файл
+            #     self.save_data_for_parsing_file(name_shop)  # записываем результат парсинга в файл
             #     self.count_requests = 0
             #     logger.debug(f'Счетчик запросов к сайту {self.count_requests}')
             #     return
@@ -369,7 +390,7 @@ class TrademeParserBot:
         logger.success(f'Получено {count_products} ссылки на товары в магазине "{name_shop}"')
         logger.debug(f'Счетчик запросов к сайту {self.count_requests}')
 
-        self.save_data_for_parsing_file()  # записываем результат парсинга в файл
+        self.save_data_for_parsing_file(name_shop)  # записываем результат парсинга в файл
 
 
 if __name__ == '__main__':

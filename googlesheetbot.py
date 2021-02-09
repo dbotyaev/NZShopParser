@@ -48,7 +48,7 @@ class GSheetsBot:
             except pygsheets.exceptions.WorksheetNotFound:  # если лист не найден, создается новый
                 sheet_shop = self.google_sheet.add_worksheet(name_shop)
                 # записываем значения в Google-таблицу
-                sheet_shop.update_values('A1', result)
+                sheet_shop.update_values('A1', result, extend=True)
                 sheet_shop.adjust_column_width(start=1, end=7, pixel_size=170)  # установка ширины столбцов
                 sheet_shop.adjust_column_width(start=5, end=5, pixel_size=500)
                 sheet_shop.adjust_column_width(start=2, end=2, pixel_size=80)
