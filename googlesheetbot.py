@@ -25,7 +25,7 @@ class GSheetsBot:
             self.shops = self.worksheet_urls_shops.get_values(
                 start=START_ADDR, end=END_ADDR, returnas='matrix')[ROW_START-1:ROW_END]
         except Exception as ex:
-            logger.error(f'Ошибка при открытии Google-таблицы и получении списка магазинов. {ex}')
+            logger.error(f'Ошибка при открытии Google-таблицы {ex}')
             raise
 
     # метода сохрания результат парсинга в Google-таблицу

@@ -10,7 +10,7 @@ from bs4 import BeautifulSoup
 from collections import Counter
 from loguru import logger
 
-from settings.settings import HEADERS, KEYCOOKIES
+from settings.settings import HEADERS, KEYCOOKIES, FILE_FOR_PARSING
 from settings.settings import URL_CHECK_AUTH, LOGIN_CHECK, URL_SHOP
 
 
@@ -42,7 +42,7 @@ class TrademeParserBot:
 
     @staticmethod
     def _get_data_for_parsing(file):
-        with open(os.getcwd() + f'\\shops\\{file}', 'w', encoding='utf-8') as file_json:
+        with open(os.getcwd() + f'\\{file}', 'r', encoding='utf-8') as file_json:
             return json.load(file_json)
 
     @staticmethod
@@ -113,7 +113,7 @@ class TrademeParserBot:
                 json.dump(self.data_for_parsing, file_json, ensure_ascii=False, indent=4)
                 logger.success(f'Данные успешно записаны в файл {name_file}')
         except Exception as ex:
-            logger.error(f'Не удалось сохранить файл {name_file} диск')
+            logger.error(f'Не удалось сохранить файл {name_file} диск {ex}')
 
     def _check_open_url(self, url):
         """
@@ -240,11 +240,11 @@ class TrademeParserBot:
         # обнуляем список списков с результатом парсинга страниц товаров магазина для загрузки в Google-таблицы
         self.result_parsing_products = []
         # получаем список ссылок на продукты магазина
-        products = self.data_for_parsing[name_shop]['products'].copy() # получаем список ссылок на продукты магазина
+        products = self.data_for_parsing[name_shop]['products'].copy()  # получаем список ссылок на продукты магазина
 
         for url_product, count_product in products.items():
             logger.info(f'Пауза перед началом парсинга')
-            time.sleep(random.randrange(4, 11))
+            time.sleep(random.randrange(3, 6))
             logger.info(f' Открываем ссылку товара {URL_SHOP + url_product}')
             response = self._check_open_url(URL_SHOP + url_product)  # проверка авторизации на странице
             if not response:
@@ -304,6 +304,7 @@ class TrademeParserBot:
         Метод парсинга страниц листинга магазина и его товаров.
         В результате выполнения сохраняется информация в файл data_for_parsing.json
         :param shop: Список из Наименования магазина и ссылки на первую страницу листинга
+                    или строка Наименования магазина при допарсинге из файла
         :return: сохраняет результат парсинга в словарь self.data_for_parsing и в файл data_for_parsing.json
         """
         def _get_urls_products(s):
@@ -316,48 +317,60 @@ class TrademeParserBot:
                 products.append(tag.get('href'))
 
         logger.info(f'Пауза перед началом парсинга')
-        time.sleep(random.randrange(30, 60))
+        time.sleep(random.randrange(15, 30))
 
         # для тестирования
         # self.count_requests = 0
 
-        urls_listing = set()  # множество уникальных ссылок страниц магазина с товарами
         products = []  # список ссылок на товары одного магазина
-        name_shop = shop[0].strip('\r')  # Наименование магазина
-        url_shop = shop[1]  # ссылка на листинг магазина
 
-        logger.info(f'Начинаем парсинг листинга магазина "{name_shop}"')
-        logger.info(f' Открываем ссылку магазина {url_shop}')
+        # обычный режим скрипта
+        if not FILE_FOR_PARSING:
+            urls_listing = set()  # множество уникальных ссылок страниц магазина с товарами
+            name_shop = shop[0].strip('\r')  # Наименование магазина
+            url_shop = shop[1]  # ссылка на листинг магазина
 
-        response = self._check_open_url(url_shop)  # проверка авторизации на странице
-        if not response:
-            logger.warning(f'Из-за ошибки пропускаем парсинг листинга магазина "{name_shop}"')
-            logger.debug(f'Счетчик запросов к сайту {self.count_requests}')
-            return
-        if response == 'STOP':  # авторизация не успешна, завершаем работу скрипта
-            logger.warning(f'Сохраняем имеющиеся результаты в файл {name_shop}.json')
-            self.save_data_for_parsing_file(name_shop)
-            raise
+            logger.info(f'Начинаем парсинг листинга магазина "{name_shop}"')
+            logger.info(f' Открываем ссылку магазина {url_shop}')
 
-        soup = BeautifulSoup(response.text, 'lxml')
-        urls_listing.add(response.url.replace(URL_SHOP, '') + '?page=1')  # текущий адрес страницы добавили в список
+            response = self._check_open_url(url_shop)  # проверка авторизации на странице
+            if not response:
+                logger.warning(f'Из-за ошибки пропускаем парсинг листинга магазина "{name_shop}"')
+                logger.debug(f'Счетчик запросов к сайту {self.count_requests}')
+                return
+            if response == 'STOP':  # авторизация не успешна, завершаем работу скрипта
+                logger.warning(f'Сохраняем имеющиеся результаты в файл {name_shop}.json')
+                self.save_data_for_parsing_file(name_shop)
+                raise
 
-        logger.info(f'Получаем все ссылки на страницы листинга')
-        tag_listing = set(soup.find_all('a', href=re.compile('\/stores\/.+\/feedback\?page=\d+')))
-        for tag in tag_listing:
-            urls_listing.add(tag.get('href'))
+            soup = BeautifulSoup(response.text, 'lxml')
+            urls_listing.add(response.url.replace(URL_SHOP, '') + '?page=1')  # текущий адрес страницы добавили в список
 
-        self.data_for_parsing[name_shop] = {}
-        self.data_for_parsing[name_shop]['url-listing'] = list(urls_listing)
-        # сортируем список по номеру страницы
-        self.data_for_parsing[name_shop]['url-listing'].\
-            sort(key=lambda url: int(re.search('\d+', re.search('\?page=\d+', url).group(0)).group(0)))
-        self.data_for_parsing[name_shop]['products'] = dict(Counter(products))
+            logger.info(f'Получаем все ссылки на страницы листинга')
+            tag_listing = set(soup.find_all('a', href=re.compile('\/stores\/.+\/feedback\?page=\d+')))
+            for tag in tag_listing:
+                urls_listing.add(tag.get('href'))
+
+            self.data_for_parsing[name_shop] = {}
+            self.data_for_parsing[name_shop]['url-listing'] = list(urls_listing)
+            # сортируем список по номеру страницы
+            self.data_for_parsing[name_shop]['url-listing'].\
+                sort(key=lambda url: int(re.search('\d+', re.search('\?page=\d+', url).group(0)).group(0)))
+            self.data_for_parsing[name_shop]['products'] = dict(Counter(products))
+
+        # режим работы допарсинга из файла
+        else:
+            name_shop = shop
+            # получаем неспарсенные ссылки на товары и преобразуем в список
+            products = list(self.data_for_parsing[name_shop]['products'].keys())
 
         logger.info(f'Переходим по страницам листинга и получаем ссылки на товары')
         # создаем копию списка для перебора, чтобы можно было перебирать и применять метод pop() в конце цикла
         urls = self.data_for_parsing[name_shop]['url-listing'].copy()
-        for listing in urls:
+        # счетчик удаления спарсенных ссылок из списка, необходим для правильного определения индекса элемента
+        # для удаления элемента, т.к. в цикле есть конструкция continue
+        count_pop = 0
+        for index, listing in enumerate(urls):
             logger.info(f'Переходим на страницу {listing}')
             response = self._check_open_url(URL_SHOP + listing)  # проверка авторизации на странице
 
@@ -387,9 +400,10 @@ class TrademeParserBot:
             # в случае удачного парсинга ссылок на товары, удаляем ссылку из словаря
             # по окончанию парсинга в словаре не должно остаться страниц с листингами
             # в противном случае данные ссылок на товары не были получены на оставшихся страницах
-            self.data_for_parsing[name_shop]['url-listing'].pop(0)
+            self.data_for_parsing[name_shop]['url-listing'].pop(index - count_pop)
+            count_pop += 1  # увеличиваем счетчик удаления элементов
 
-            time.sleep(random.randrange(4, 11))
+            time.sleep(random.randrange(3, 6))
 
             # секция для тестирования
             # if self.count_requests > 3:
@@ -420,7 +434,7 @@ if __name__ == '__main__':
     # url = 'https://www.trademe.co.nz/home-living/security-locks-alarms/security-cameras/other/listing-2971335364.htm'
     # try:
     #     response = requests.post(url, headers=HEADERS)
-        # response = requests.post(url, headers=HEADERS, stream=True, allow_redirects=True)
+    # response = requests.post(url, headers=HEADERS, stream=True, allow_redirects=True)
     #     print('url', response.url)
     #     print(response.encoding)
     #     with open(os.getcwd() + '\\shops\\listing.html', 'w', encoding='utf-8') as file:
