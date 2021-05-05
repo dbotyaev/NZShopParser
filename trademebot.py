@@ -152,7 +152,13 @@ class TrademeParserBot:
         except AttributeError:
             # дополнительная проверка на наличие авторизации при парсинге товаров без LOGIN_CHECK
             try:
-                if soup.find('a', class_='logged-in__log-out').text.strip() == 'Log out':
+                # для отладки
+                # with open(os.getcwd() + '\\shops\\log-out.html', 'w', encoding='utf-8') as file:
+                #     file.write(response.text)
+                # print(soup.select_one('a.logged-in__log-out'))
+                # print(response.url)
+
+                if soup.select_one('a.logged-in__log-out').text.strip() == 'Log out':
                     logger.debug(f'Страница без параметра LOGIN_CHECK')
                     return response
             except AttributeError as ex:
@@ -344,18 +350,25 @@ class TrademeParserBot:
                 raise
 
             soup = BeautifulSoup(response.text, 'lxml')
-            urls_listing.add(response.url.replace(URL_SHOP, '') + '?page=1')  # текущий адрес страницы добавили в список
+
+            # with open(os.getcwd() + '\\shops\\shop.html', 'w', encoding='utf-8') as file:
+            #     file.write(response.text)
+
+            urls_listing.add(response.url.replace(URL_SHOP, '') + '&type=&page=1')  # текущий адрес страницы добавили в список
 
             logger.info(f'Получаем все ссылки на страницы листинга')
-            tag_listing = set(soup.find_all('a', href=re.compile('\/stores\/.+\/feedback\?page=\d+')))
+            # tag_listing = set(soup.find_all('a', href=re.compile('\/stores\/.+\/feedback\?page=\d+')))
+            tag_listing = set(
+                soup.find_all('a', href=re.compile('Feedback\.aspx\?member=\d+&type=&page=\d+')))
+
             for tag in tag_listing:
-                urls_listing.add(tag.get('href'))
+                urls_listing.add('/Members/' + tag.get('href'))
 
             self.data_for_parsing[name_shop] = {}
             self.data_for_parsing[name_shop]['url-listing'] = list(urls_listing)
             # сортируем список по номеру страницы
             self.data_for_parsing[name_shop]['url-listing'].\
-                sort(key=lambda url: int(re.search('\d+', re.search('\?page=\d+', url).group(0)).group(0)))
+                sort(key=lambda url: int(re.search('\d+', re.search('&page=\d+', url).group(0)).group(0)))
             self.data_for_parsing[name_shop]['products'] = dict(Counter(products))
 
         # режим работы допарсинга из файла

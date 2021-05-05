@@ -10,7 +10,7 @@ from trademebot import TrademeParserBot
 
 if __name__ == '__main__':
     path_log = os.getcwd() + f'\\logs\\debug.log'
-    logger.add(path_log, level='DEBUG', compression="zip", rotation="9:00", retention="3 days")
+    logger.add(path_log, level='DEBUG', compression="zip", rotation="9:00", retention="3 days", encoding='utf-8')
 
     logger.info(f'Запуск скрипта')
     cookies_selenium = authorization.get_cookies()  # в ручном режиме получаем Cookies
