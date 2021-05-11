@@ -10,6 +10,8 @@ from bs4 import BeautifulSoup
 from collections import Counter
 from loguru import logger
 
+from authorization import get_response_selenium
+
 from settings.settings import HEADERS, KEYCOOKIES, FILE_FOR_PARSING
 from settings.settings import URL_CHECK_AUTH, LOGIN_CHECK, URL_SHOP
 
@@ -38,7 +40,7 @@ class TrademeParserBot:
             self.data_for_parsing = self._get_data_for_parsing(file_for_parsing)  # получаем словарь из файла
         self.count_requests = 0  # общий счетчик запросов к сайту
         self.result_parsing_products = []  # динамический результат парсинга товаров
-        self.count_no_auth = 100  # счетчик подсчета открытия страниц без авторизации для завершения парсинга
+        self.count_no_auth = 300  # счетчик подсчета открытия страниц без авторизации для завершения парсинга
 
     @staticmethod
     def _get_data_for_parsing(file):
@@ -152,20 +154,30 @@ class TrademeParserBot:
         except AttributeError:
             # дополнительная проверка на наличие авторизации при парсинге товаров без LOGIN_CHECK
             try:
-                # для отладки
-                # with open(os.getcwd() + '\\shops\\log-out.html', 'w', encoding='utf-8') as file:
-                #     file.write(response.text)
-                # print(soup.select_one('a.logged-in__log-out'))
-                # print(response.url)
-
                 if soup.select_one('a.logged-in__log-out').text.strip() == 'Log out':
                     logger.debug(f'Страница без параметра LOGIN_CHECK')
                     return response
             except AttributeError as ex:
-                logger.error(f'Ошибка авторизации на текущей странице {ex}')
-                self.count_no_auth -= 1  # увеличиваем счетчик найденных страниц без авторизации
-                logger.debug(f'Осталось попыток открытия страниц без авторизации {self.count_no_auth}')
-                return 'STOP'
+                try:
+                    logger.debug(f'Ошибка авторизации на текущей странице {ex}')
+                    logger.info(f'Делаем дополнительный запрос на сайт')
+                    self.count_no_auth -= 1  # увеличиваем счетчик найденных страниц без авторизации
+                    logger.debug(f'Осталось попыток открытия страниц без авторизации {self.count_no_auth}')
+                    # возвращаем ответ без параметра headers (с ним проблемы с кодировкой)
+                    self.count_requests += 1
+
+                    # возможный вариант получения в режиме имитации действий в браузере
+                    # требует корректировки кода, т.к. response не имеет атрибута text
+                    # response = get_response_selenium(url=url, session=self.session)
+
+                    response = self.session.get(url, timeout=30)
+                    if response.status_code == 200:
+                        return response
+                    else:
+                        return 'STOP'
+                except Exception as ex:
+                    logger.exception(f'Ошибка при дополнительном запросе на сайт {ex}')
+                    return 'STOP'
 
     def parsing_products(self, name_shop):
         """
@@ -259,20 +271,22 @@ class TrademeParserBot:
                 # TODO возможно нужен алгоритм подсчета кол-ва ошибок и выхода из скрипта при необходимости
                 continue
             if response == 'STOP':  # авторизация не успешна
-                if self.count_no_auth == 0:  # проверяем счетчик открытия страниц без авторизации
+                if self.count_no_auth <= 0:  # проверяем счетчик открытия страниц без авторизации
                     logger.warning(f'Из ошибки авторизации прекращаем парсинг')
                     logger.warning(f'Сохраняем неспарсенные ссылки на товары в файл {name_shop}.json')
                     self.save_data_for_parsing_file(name_shop)
-                    raise  # завершаем скрипт
+                    self.data_for_parsing = {}  # очищаем словарь для парсинга нового магазина
+                    raise  # завершаем парсинг магазина и переходим к следующему
                 else:
                     logger.warning(f'Из-за ошибки авторизации пропускаем парсинг товара')
                     logger.debug(f'Счетчик запросов к сайту {self.count_requests}')
                     continue
 
             soup = BeautifulSoup(response.text, 'lxml')
+
             product_id = re.search('[0-9]+', url_product).group(0)
             product_count = int(count_product)
-            product_url = response.url
+            product_url = url_product
             product_title = soup.find('h1').text.strip()
             product_description = _get_description(soup)
             product_price = _get_price(soup, response.text)
@@ -347,9 +361,13 @@ class TrademeParserBot:
             if response == 'STOP':  # авторизация не успешна, завершаем работу скрипта
                 logger.warning(f'Сохраняем имеющиеся результаты в файл {name_shop}.json')
                 self.save_data_for_parsing_file(name_shop)
-                raise
+                raise  # завершаем работу скрипта
 
-            soup = BeautifulSoup(response.text, 'lxml')
+            try:
+                soup = BeautifulSoup(response.text, 'lxml')
+            except AttributeError as ex:
+                soup = BeautifulSoup(response, 'lxml')  # если response уже в виде текста
+                # logger.exception(f'{ex}')
 
             # with open(os.getcwd() + '\\shops\\shop.html', 'w', encoding='utf-8') as file:
             #     file.write(response.text)
@@ -393,7 +411,7 @@ class TrademeParserBot:
                 # TODO возможно нужен алгоритм подсчета кол-ва ошибок и выхода из скрипта при необходимости
                 continue
             if response == 'STOP':  # авторизация не успешна
-                if self.count_no_auth == 0:
+                if self.count_no_auth <= 0:
                     logger.warning(f'Из ошибки авторизации прекращаем парсинг')
                     logger.warning(f'Сохраняем имеющиеся результаты в файл {name_shop}.json')
                     self.save_data_for_parsing_file(name_shop)
@@ -403,7 +421,12 @@ class TrademeParserBot:
                     logger.debug(f'Счетчик запросов к сайту {self.count_requests}')
                     continue  # пропускаем парсинг страницы и продолжаем цикл
 
-            soup = BeautifulSoup(response.text, 'lxml')
+            try:
+                soup = BeautifulSoup(response.text, 'lxml')
+            except AttributeError as ex:
+                soup = BeautifulSoup(response, 'lxml')  # если response уже в виде текста
+                # logger.exception(f'{ex}')
+
             # получаем ссылки на товары на странице листинга и добавляем в кортеж
             _get_urls_products(soup)
             logger.info(f'Ссылки для парсинга товаров получены')

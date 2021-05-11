@@ -90,6 +90,49 @@ def get_cookies():
         return cookies
 
 
+def get_response_selenium(url, session):
+    # получение html-страницы для разбора
+    logger.info(f'Открываем браузер в скрытом режиме и переходим на сайт {url}')
+    options = webdriver.ChromeOptions()
+    # запуск браузера в скрытом режиме
+    options.add_argument('--headless')
+    # отключение режима Webdriver for ChromeDriver version 79.0.3945.16 or over
+    options.add_argument("--disable-blink-features=AutomationControlled")
+    options.add_argument(
+        f'--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko)'
+        f' Chrome/87.0.4280.88 Safari/537.36')
+    driver_file = os.getcwd() + f'\\chromedriver\\chromedriver.exe'  # path to ChromeDriver
+    browser = webdriver.Chrome(driver_file, options=options)
+
+    browser.get(url=url)  # открываем страницу с товаром
+
+    # достаем cookies из текущей сессии и добавляем в браузер
+    for cookie in session.cookies:
+        browser.add_cookie(
+            {
+                'name': cookie.name,
+                'value': cookie.value,
+                'domain': cookie.domain,
+                'path': cookie.path,
+                'secure': cookie.secure,
+            }
+        )
+
+    browser.refresh()  # обновляем страницу
+    print('после обновления страницы')
+    response_selenium = browser.page_source
+
+    # для отладки
+    # with open(os.getcwd() + '\\shops\\log-out.html', 'w', encoding='utf-8') as file:
+    #     file.write(response_selenium)
+
+    # time.sleep(15)
+    close_browser(browser=browser)
+
+    # результат отдается уже в виде текста
+    return response_selenium
+
+
 if __name__ == '__main__':
     pass
     # print(get_cookies())

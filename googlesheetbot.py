@@ -28,8 +28,11 @@ class GSheetsBot:
             logger.error(f'Ошибка при открытии Google-таблицы {ex}')
             raise
 
-    # метода сохрания результат парсинга в Google-таблицу
+    # метода сохранения результата парсинга в Google-таблицу
     def save_result_parsing(self, name_shop: str, result: list):
+        if not result:
+            logger.debug(f'Результат парсинга пустой список, сохранять в Google-таблицу нечего.')
+            return
         title = ['№ Листинга', 'Кол-во', 'Ссылка на листинг',	'Товар', 'Описание', 'Цена', 'Признак цены']
         result.insert(0, title)  # Добавляем заголовок таблицы
         try:

@@ -92,6 +92,3 @@ if __name__ == '__main__':
         logger.error(f'Необходимо заново запустить скрипт и пройти процедуру авторизации')
         logger.debug(f'Счетчик запросов к сайту {parser.count_requests}')
         sys.exit(1)
-
-
-# parser.parsing_products(parser.data_for_parsing['HomeMart Auckland']['products'])
