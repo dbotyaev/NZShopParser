@@ -286,7 +286,7 @@ class TrademeParserBot:
 
             product_id = re.search('[0-9]+', url_product).group(0)
             product_count = int(count_product)
-            product_url = url_product
+            product_url = response.url
             product_title = soup.find('h1').text.strip()
             product_description = _get_description(soup)
             product_price = _get_price(soup, response.text)
